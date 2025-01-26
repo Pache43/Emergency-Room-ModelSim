@@ -240,5 +240,48 @@ def save_statistics(results, filename = "results/Task1.csv"):
 
 # Hauptprogramm
 if __name__ == "__main__":
-    run_simulation()
+    for i in range(0, 100):
+        run_simulation()
+
+    df = pd.read_csv(r'C:\Users\Johannes\Documents\Uni\Modeling and Simulation\Emergency-Room-ModelSim-main\results\Task1.csv', engine='python', sep=';',header=0)
+    print(type(df.iloc[0,0]))
+    #print(df['Overall Average Time'])
+
+    plt.figure(figsize=(12, 8))
+    boxplot1 = df.boxplot(column=["Overall Average Time","Avg. Time Type 1","Avg. Time Type 2","Avg. Time Type 3","Avg. Time Type 4"])
+    plt.title('Average Time Overall/Per Patient Type',fontsize =20,pad = 30)
+    plt.xlabel("Patient Type", fontsize=16,labelpad=10)
+    plt.ylabel("Average Time(min)", fontsize=16,labelpad=20)
+    plt.show()
+    plt.figure(figsize=(12, 8))
+    boxplot2 = df.boxplot(column=['Count Type 1', 'Count Type 2', 'Count Type 3', 'Count Type 4'])
+    plt.axhline(y=250*0.35,xmin=0.05,xmax=0.2, color='r', linestyle=':',alpha=0.7)
+    plt.axhline(y=250 * 0.2, xmin=0.3, xmax=0.45, color='r', linestyle=':',alpha=0.7)
+    plt.axhline(y=250 * 0.05, xmin=0.525, xmax=0.725, color='r', linestyle=':',alpha=0.7)
+    plt.axhline(y=250 * 0.4, xmin=0.8, xmax=0.95, color='r', linestyle=':',alpha=0.7)
+
+    plt.title('Patient Numbers per Type', fontsize=20,pad = 30)
+    plt.xlabel("Patient Type", fontsize=16,labelpad=10)
+    plt.ylabel("Number of Patients", fontsize=16,labelpad=20)
+    #boxplot3 = df.boxplot(column=["Standard Deviation"])
+    plt.show()
+    #df['selection']= 0
+    df.loc['Mean'] = df.mean()
+    #df.loc['test'] = df.loc[0]
+
+    for c in df.columns:
+        print(c,type(c))
+        df.loc['Max {0}'.format(c)]= df.iloc[df[c].idxmax()]
+        df.loc['Min {0}'.format(c)]= df.iloc[df[c].idxmin()]
+
+    df_test = df[['Overall Average Time','Avg. Time Type 1','Avg. Time Type 2','Avg. Time Type 3','Avg. Time Type 4','Count Type 1', 'Count Type 2', 'Count Type 3', 'Count Type 4']].tail(len(df.columns)*2+1)
+    print(df_test)
+    df_test = df_test.transpose()
+
+    barplot = df_test[['Mean','Max Overall Average Time','Min Overall Average Time', 'Max Count Type 3','Max Count Type 4']].plot.bar(figsize=(12, 9))
+    plt.title('Comparison between certain days', fontsize=20, pad=30)
+    plt.ylabel("Time(min)/Number of Perons", fontsize=16, labelpad=20)
+    plt.xticks(rotation=30, ha='right')
+
+    plt.show()
 
