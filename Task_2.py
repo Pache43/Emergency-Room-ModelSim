@@ -3,6 +3,7 @@ import simpy
 import random
 import os
 import csv
+import matplotlib.pyplot as plt
 
 
 def triangular_dist(minimum, mode, maximum):
@@ -40,11 +41,15 @@ def get_cw_time(cw1, cw2, casualty_ward):
         return 0
 
 
-def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaster, stats, cw_limit):
+def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaster, stats, cw_limit, queue_log):
     """
     Simulates a patients process through the emergency room (Task 2)
     """
     arrival_time = env.now  # Record arrival time
+
+    queue_log["time"].append(env.now)
+    queue_log["cw1_queue"].append(len(cw1.queue))
+    queue_log["cw2_queue"].append(len(cw2.queue))
 
     # Registration: R ->
     with registration.request() as req:
@@ -52,12 +57,14 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
         reg_time = triangular_dist(0.2, 0.5, 1.0)
         yield env.timeout(reg_time)
 
-    # Allocation to CW1 or CW2: -> CW ->
-    casualty_ward = cw2 if random.random() < 0.4 and len(cw2.queue) < cw_limit else cw1
+
 
     # Wait until doctors arrive
     if env.now < 30:
         yield env.timeout(30-env.now)
+
+    # Allocation to CW1 or CW2: -> CW ->
+    casualty_ward = cw2 if random.random() < 0.4 and len(cw2.queue) < cw_limit else cw1
 
     # Doctors handle patients in CW1/CW2
     with casualty_ward.request() as req:
@@ -106,6 +113,10 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
     else:
         pass
 
+    queue_log["time"].append(env.now)
+    queue_log["cw1_queue"].append(len(cw1.queue))
+    queue_log["cw2_queue"].append(len(cw2.queue))
+
     # Calculate time of patient
     departure_time = env.now
     total_time = departure_time - arrival_time
@@ -114,7 +125,7 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
     stats["patients"].append({"id": patient_id, "type": patient_type, "total_time": total_time})
 
 
-def generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster, stats, cw_limit):
+def generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster, stats, cw_limit, queue_log):
     """
     Generates patients arriving at the emergency department
     """
@@ -122,10 +133,10 @@ def generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster,
         interarrival_time = random.expovariate(1 / 0.3)
         yield env.timeout(interarrival_time)
         patient_type = random.choices([1, 2, 3, 4], weights=[35, 20, 5, 40], k=1)[0]
-        env.process(patient(env, i, patient_type, registration, cw1, cw2, x_ray, plaster, stats, cw_limit))
+        env.process(patient(env, i, patient_type, registration, cw1, cw2, x_ray, plaster, stats, cw_limit, queue_log))
 
 
-def run_simulation(num_patients=250, cw_limit=1):
+def run_simulation(num_patients=250, cw_limit=20):
     
     """
     Runs emergency room simulation
@@ -149,10 +160,16 @@ def run_simulation(num_patients=250, cw_limit=1):
     # Statistics dictionary
     stats = {"patients": []}
 
-    env.process(generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster, stats, cw_limit))
+    # Warteschlangen-Daten erfassen
+    queue_log = {"time": [], "cw1_queue": [], "cw2_queue": []}
+
+    env.process(generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster, stats, cw_limit, queue_log))
 
     # Starts simulation
     env.run()
+
+    # Ergebnisse visualisieren
+    visualize_queue(queue_log)
 
     # Calculate statistics and save it in CSV
     results = calc_statistics(stats, cw_limit)
@@ -245,6 +262,19 @@ def save_statistics(results, filename = "results/Task2.csv"):
             results["cw_limit"]
         ]
         writer.writerow(row)
+
+
+def visualize_queue(queue_log):
+    plt.figure(figsize=(10, 5))
+    plt.plot(queue_log["time"], queue_log["cw1_queue"], label="CW1 Queue Size")
+    plt.plot(queue_log["time"], queue_log["cw2_queue"], label="CW2 Queue Size")
+    plt.xlabel("Time (minutes)")
+    plt.ylabel("Queue Size")
+    plt.title("Queue Size Over Time")
+    plt.legend()
+    plt.grid()
+    plt.show()
+
 
 # Hauptprogramm
 if __name__ == "__main__":
