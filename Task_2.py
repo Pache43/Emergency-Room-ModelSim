@@ -4,8 +4,6 @@ import random
 import os
 import csv
 
-# Sets seed for reproducibility
-random.seed(10)
 
 def triangular_dist(minimum, mode, maximum):
     """
@@ -127,7 +125,8 @@ def generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster,
         env.process(patient(env, i, patient_type, registration, cw1, cw2, x_ray, plaster, stats, cw_limit))
 
 
-def run_simulation(num_patients=250, cw_limit=5):
+def run_simulation(num_patients=250, cw_limit=1):
+    
     """
     Runs emergency room simulation
 
@@ -136,6 +135,9 @@ def run_simulation(num_patients=250, cw_limit=5):
         cw_limit (int): Max queue size of casualty ward 2
     """
     env = simpy.Environment()
+
+    # Sets seed for reproducibility
+    random.seed(10) 
 
     # Defines resources
     registration = simpy.Resource(env, capacity=1)

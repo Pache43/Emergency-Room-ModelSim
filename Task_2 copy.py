@@ -3,9 +3,8 @@ import simpy
 import random
 import os
 import csv
+import matplotlib.pyplot as plt
 
-# Sets seed for reproducibility
-random.seed(10)
 
 def triangular_dist(minimum, mode, maximum):
     """
@@ -20,6 +19,7 @@ def triangular_dist(minimum, mode, maximum):
         float: random value of given triangular distribution
     """
     return random.triangular(minimum, mode, maximum)
+
 
 def get_cw_time(cw1, cw2, casualty_ward):
     """
@@ -41,11 +41,15 @@ def get_cw_time(cw1, cw2, casualty_ward):
         return 0
 
 
-def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaster, stats, prio):
+def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaster, stats, cw_limit, queue_log):
     """
-    Simulates a patients process through the emergency room (Task 3)
+    Simulates a patients process through the emergency room (Task 2)
     """
     arrival_time = env.now  # Record arrival time
+
+    queue_log["time"].append(env.now)
+    queue_log["cw1_queue"].append(len(cw1.queue))
+    queue_log["cw2_queue"].append(len(cw2.queue))
 
     # Registration: R ->
     with registration.request() as req:
@@ -53,27 +57,28 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
         reg_time = triangular_dist(0.2, 0.5, 1.0)
         yield env.timeout(reg_time)
 
-    # Allocation to CW1 or CW2: -> CW ->
-    casualty_ward = cw1 if random.random() < 0.6 else cw2
+
 
     # Wait until doctors arrive
     if env.now < 30:
         yield env.timeout(30-env.now)
 
+    # Allocation to CW1 or CW2: -> CW ->
+    casualty_ward = cw2 if random.random() < 0.4 and len(cw2.queue) < cw_limit else cw1
+
     # Doctors handle patients in CW1/CW2
-    with casualty_ward.request(priority=prio) as req:
+    with casualty_ward.request() as req:
         yield req
         cw_time = get_cw_time(cw1, cw2, casualty_ward)
         yield env.timeout(cw_time)
 
-    # Type 1: Xray -> CW (Prio) -> Exit
-    if patient_type == 1:
+    # Type 1: Xray -> CW -> Exit
+    if patient_type == 1: 
         with x_ray.request() as req:
             yield req
             x_time = triangular_dist(2.0, 2.8, 4.1)
             yield env.timeout(x_time)
-            prio = -1
-        with casualty_ward.request(priority=prio) as req:
+        with casualty_ward.request() as req:
             yield req
             cw_time = get_cw_time(cw1, cw2, casualty_ward)
             yield env.timeout(cw_time)
@@ -84,9 +89,9 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
             yield req
             plaster_time = triangular_dist(3.0, 3.8, 4.7)
             yield env.timeout(plaster_time)
-
-    # Type 3: -> Xray -> Plaster -> Xray -> CW (Prio) -> Exit
-    elif patient_type == 3:  # Gips erneuern und Röntgen
+    
+    # Type 3: -> Xray -> Plaster -> Xray -> CW -> Exit
+    elif patient_type == 3:  
         with x_ray.request() as req:
             yield req
             x_time = triangular_dist(2.0, 2.8, 4.1)
@@ -99,15 +104,18 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
             yield req
             x_time = triangular_dist(2.0, 2.8, 4.1)
             yield env.timeout(x_time)
-            prio = -1
-        with casualty_ward.request(priority=prio) as req:
+        with casualty_ward.request() as req:
             yield req
             cw_time = get_cw_time(cw1, cw2, casualty_ward)
             yield env.timeout(cw_time)
-    
+   
     # Type 4: -> Exit
     else:
         pass
+
+    queue_log["time"].append(env.now)
+    queue_log["cw1_queue"].append(len(cw1.queue))
+    queue_log["cw2_queue"].append(len(cw2.queue))
 
     # Calculate time of patient
     departure_time = env.now
@@ -117,8 +125,7 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
     stats["patients"].append({"id": patient_id, "type": patient_type, "total_time": total_time})
 
 
-
-def generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster, stats):
+def generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster, stats, cw_limit, queue_log):
     """
     Generates patients arriving at the emergency department
     """
@@ -126,17 +133,17 @@ def generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster,
         interarrival_time = random.expovariate(1 / 0.3)
         yield env.timeout(interarrival_time)
         patient_type = random.choices([1, 2, 3, 4], weights=[35, 20, 5, 40], k=1)[0]
-        env.process(patient(env, i, patient_type, registration, cw1, cw2, x_ray, plaster, stats, prio = 0))
+        env.process(patient(env, i, patient_type, registration, cw1, cw2, x_ray, plaster, stats, cw_limit, queue_log))
 
 
-
-# Simulationsumgebung
-def run_simulation(num_patients=250):
+def run_simulation(num_patients=250, cw_limit=20):
+    
     """
     Runs emergency room simulation
 
     Paramters:
         num_patients (int): Number of patients for simulation
+        cw_limit (int): Max queue size of casualty ward 2
     """
     env = simpy.Environment()
 
@@ -145,42 +152,52 @@ def run_simulation(num_patients=250):
 
     # Defines resources
     registration = simpy.Resource(env, capacity=1)
-    cw1 = simpy.PriorityResource(env, capacity=2)
-    cw2 = simpy.PriorityResource(env, capacity=2)
+    cw1 = simpy.Resource(env, capacity=2)
+    cw2 = simpy.Resource(env, capacity=2)
     x_ray = simpy.Resource(env, capacity=2)
     plaster = simpy.Resource(env, capacity=1)
 
     # Statistics dictionary
     stats = {"patients": []}
 
-    env.process(generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster, stats))
+    # Warteschlangen-Daten erfassen
+    queue_log = {"time": [], "cw1_queue": [], "cw2_queue": []}
+
+    env.process(generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster, stats, cw_limit, queue_log))
 
     # Starts simulation
     env.run()
 
+    # Ergebnisse visualisieren
+    visualize_queue(queue_log)
+
     # Calculate statistics and save it in CSV
-    results = calc_statistics(stats)
+    results = calc_statistics(stats, cw_limit)
     save_statistics(results)
 
-def calc_statistics(stats):
+def calc_statistics(stats, cw_limit):
     """
     Calulates and displays statistics of the simulation
 
     Parameters:
         stats (dict): Stats of each simulated patient
+        cw_limit (int): Maximum siz of CW2 queue
     
     Results:
         dict: A dictionary containing the calculated statistics
     """
     total_patients = len(stats["patients"])
     print(f"Total patients processed: {total_patients}")
+    print(f"Maximum size of CW2 queue: {cw_limit}")
 
     # Group patients by type
     types = {1: [], 2: [], 3: [], 4: []}
     for patient in stats["patients"]:
         types[patient["type"]].append(patient["total_time"])
 
-    results = {"overall_avg_time": 0, "standard_deviation": 0, "types": {}}
+    results = {"cw_limit": 0, "overall_avg_time": 0, "standard_deviation": 0, "types": {}}
+
+    results["cw_limit"] = cw_limit
 
     for patient_type, times in types.items():
         if times:
@@ -208,7 +225,7 @@ def calc_statistics(stats):
     return results
 
 
-def save_statistics(results, filename = "results/Task3.csv"):
+def save_statistics(results, filename = "results/Task2.csv"):
     """
     Save the calculated statistics to a defined CSV File in the results directory
 
@@ -221,7 +238,8 @@ def save_statistics(results, filename = "results/Task3.csv"):
         "Count Type 1", "Avg. Time Type 1",
         "Count Type 2", "Avg. Time Type 2",
         "Count Type 3", "Avg. Time Type 3",
-        "Count Type 4", "Avg. Time Type 4"
+        "Count Type 4", "Avg. Time Type 4",
+        "Casualty Ward 2 Limit"
     ]
 
     file_exists = os.path.exists(filename)
@@ -240,9 +258,23 @@ def save_statistics(results, filename = "results/Task3.csv"):
             results["types"][1]["count"], f"{results['types'][1]['avg_time']:.2f}".replace(".", ","),
             results["types"][2]["count"], f"{results['types'][2]['avg_time']:.2f}".replace(".", ","),
             results["types"][3]["count"], f"{results['types'][3]['avg_time']:.2f}".replace(".", ","),
-            results["types"][4]["count"], f"{results['types'][4]['avg_time']:.2f}".replace(".", ",")
+            results["types"][4]["count"], f"{results['types'][4]['avg_time']:.2f}".replace(".", ","),
+            results["cw_limit"]
         ]
         writer.writerow(row)
+
+
+def visualize_queue(queue_log):
+    plt.figure(figsize=(10, 5))
+    plt.plot(queue_log["time"], queue_log["cw1_queue"], label="CW1 Queue Size")
+    plt.plot(queue_log["time"], queue_log["cw2_queue"], label="CW2 Queue Size")
+    plt.xlabel("Time (minutes)")
+    plt.ylabel("Queue Size")
+    plt.title("Queue Size Over Time")
+    plt.legend()
+    plt.grid()
+    plt.show()
+
 
 # Hauptprogramm
 if __name__ == "__main__":

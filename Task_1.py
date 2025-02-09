@@ -4,8 +4,6 @@ import random
 import os
 import csv
 
-# Sets seed for reproducibility
-random.seed(10)
 
 def triangular_dist(minimum, mode, maximum):
     """
@@ -135,6 +133,9 @@ def run_simulation(num_patients=250):
         num_patients (int): Number of patients for simulation
     """
     env = simpy.Environment()
+    
+    # Sets seed for reproducibility
+    random.seed(10) 
 
     # Defines resources
     registration = simpy.Resource(env, capacity=1)
@@ -240,7 +241,7 @@ def save_statistics(results, filename = "results/Task1.csv"):
 
 # Hauptprogramm
 if __name__ == "__main__":
-    for i in range(0, 100):
+    for i in range(0, 2):
         run_simulation()
 
     df = pd.read_csv(r'C:\Users\Johannes\Documents\Uni\Modeling and Simulation\Emergency-Room-ModelSim-main\results\Task1.csv', engine='python', sep=';',header=0)
