@@ -3,27 +3,23 @@ import simpy
 import random
 import os
 import csv
-import math
-import simpy
-import random
-import os
-import csv
 import pandas as pd
 import matplotlib.pyplot as plt
 
 """Task 3 is to implement a priority Que to the implementation of Task 1. 
     The only differences between the versions are the files the data gets saved in and the Priorities 
     chosen in the Patient function
-    
-    This is Version 1:
-    Priorities are given to Patient Type 1&3 when entering the Casualty Ward a second time
-    
+
+    This is Version 3:
+    Priorities are given to to every Patient determined by Time of Arrival.(Earlier Arrival will get priortized
+
     Changes in Priorities are in line:
-    92,119
-    
+    81,93,120
+      
     Its important to admit, that priority que of simpy uses integer numbers and lower number get priortized
     """
 
+# Sets seed for reproducibility
 random.seed(10)
 
 def triangular_dist(minimum, mode, maximum):
@@ -39,7 +35,6 @@ def triangular_dist(minimum, mode, maximum):
         float: random value of given triangular distribution
     """
     return random.triangular(minimum, mode, maximum)
-
 
 def get_cw_time(cw1, cw2, casualty_ward):
     """
@@ -81,7 +76,9 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
         yield env.timeout(30-env.now)
 
     # Doctors handle patients in CW1/CW2
-    with casualty_ward.request(priority=prio) as req:
+    #Priority in Caualty wards get applied by the arrival time
+    #The earlier a Patient arrives, the more he gets priortized
+    with casualty_ward.request(priority=int(arrival_time)) as req:
         yield req
         cw_time = get_cw_time(cw1, cw2, casualty_ward)
         yield env.timeout(cw_time)
@@ -93,10 +90,10 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
             x_time = triangular_dist(2.0, 2.8, 4.1)
             yield env.timeout(x_time)
             prio = -1
-        with casualty_ward.request(priority=prio) as req:
-            yield req
-            cw_time = get_cw_time(cw1, cw2, casualty_ward)
-            yield env.timeout(cw_time)
+        with casualty_ward.request(priority=int(arrival_time)) as req:
+                yield req
+                cw_time = get_cw_time(cw1, cw2, casualty_ward)
+                yield env.timeout(cw_time)
 
     # Type 2: -> Plaster -> Exit
     elif patient_type == 2: 
@@ -120,7 +117,7 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
             x_time = triangular_dist(2.0, 2.8, 4.1)
             yield env.timeout(x_time)
             prio = -1
-        with casualty_ward.request(priority=prio) as req:
+        with casualty_ward.request(priority=int(arrival_time)) as req:
             yield req
             cw_time = get_cw_time(cw1, cw2, casualty_ward)
             yield env.timeout(cw_time)
@@ -132,7 +129,6 @@ def patient(env, patient_id, patient_type, registration, cw1, cw2, x_ray, plaste
     # Calculate time of patient
     departure_time = env.now
     total_time = departure_time - arrival_time
-
     # Save time in statistics dictionary
     stats["patients"].append({"id": patient_id, "type": patient_type, "total_time": total_time})
 
@@ -146,6 +142,7 @@ def generate_patients(env, num_patients, registration, cw1, cw2, x_ray, plaster,
         interarrival_time = random.expovariate(1 / 0.3)
         yield env.timeout(interarrival_time)
         patient_type = random.choices([1, 2, 3, 4], weights=[35, 20, 5, 40], k=1)[0]
+
         env.process(patient(env, i, patient_type, registration, cw1, cw2, x_ray, plaster, stats, prio = 0))
 
 
@@ -179,7 +176,6 @@ def run_simulation(num_patients=250):
     results = calc_statistics(stats)
     save_statistics(results)
     save_raw_data(stats)
-
 
 def calc_statistics(stats):
     """
@@ -226,17 +222,16 @@ def calc_statistics(stats):
 
     return results
 
-
-def save_raw_data(stats, filename = "results/raw_Task3.csv"):
+def save_raw_data(stats, filename = "results/raw_Task3v3.csv"):
     """
        Save the raw data to a defined CSV File in the results directory
 
-        This was necessary for Task 3 as we want to take a look at Standard Deviation and
-        calculating the overall Standard Deviation is way easier from the raw patient data.
+        This was necesary for Task 3 as we want to take a look at Standard Deviation and
+        calculating the overall Standard Deviation is way easier from the raww patient data.
 
        Parameters:
            stats (dict): patient data which want to be saved
-           filename (str, optional): Path to the csv file, if doesn't exist will generate"""
+           filename (str, optional): Path to the csv file, if doesnt exist will generate"""
 
     header = [
         "Total Time","Patient Type"
@@ -257,9 +252,7 @@ def save_raw_data(stats, filename = "results/raw_Task3.csv"):
                 patient["total_time"], patient["type"]
             ]
             writer.writerow(row)
-
-
-def save_statistics(results, filename = "results/Task3.csv"):
+def save_statistics(results, filename = "results/Task3v3.csv"):
     """
     Save the calculated statistics to a defined CSV File in the results directory
 
@@ -294,18 +287,19 @@ def save_statistics(results, filename = "results/Task3.csv"):
         ]
         writer.writerow(row)
 
-# Mainprogram
+# Hauptprogramm
 if __name__ == "__main__":
-    #run simulation 100 times
+    # run simulation 100 times
     for i in range(0, 100):
         run_simulation()
 
-    #read results from csv
+    # read results from csv
     df = pd.read_csv(
-        r'results\Task3.csv',
+        r'results\Task3v3.csv',
         engine='python', sep=';', header=0)
 
-    #Plot Time overall and per Type
+
+    # Plot Time overall and per Type
     plt.figure(figsize=(12, 8))
     boxplot1 = df.boxplot(
         column=["Overall Average Time", "Avg. Time Type 1", "Avg. Time Type 2", "Avg. Time Type 3", "Avg. Time Type 4"])
@@ -314,19 +308,19 @@ if __name__ == "__main__":
     plt.ylabel("Average Time(min)", fontsize=16, labelpad=20)
     plt.show()
 
-    #add a row with means
+    # add a row with means
     df.loc['Mean'] = df.mean()
 
-    #get the Maximum/Minimum of every column
+    # get the Maximum/Minimum of every column
     for c in df.columns:
-        df.loc['Max {0}'.format(c)]= df.iloc[df[c].idxmax()]
-        df.loc['Min {0}'.format(c)]= df.iloc[df[c].idxmin()]
+        df.loc['Max {0}'.format(c)] = df.iloc[df[c].idxmax()]
+        df.loc['Min {0}'.format(c)] = df.iloc[df[c].idxmin()]
 
-    #add row with standard Deviation
+    # add row with standard Deviation
     df.loc['Standard Deviation'] = df.std()
 
-    #print the maxima/minima of Time and Patient Types
-    df_test = df[['Overall Average Time','Standard Deviation','Avg. Time Type 1',
-                  'Avg. Time Type 2','Avg. Time Type 3','Avg. Time Type 4','Count Type 1',
-                  'Count Type 2', 'Count Type 3', 'Count Type 4']].tail(len(df.columns)*2+2)
+    # print the maxima/minima of Time and Patient Types
+    df_test = df[['Overall Average Time', 'Standard Deviation', 'Avg. Time Type 1',
+                  'Avg. Time Type 2', 'Avg. Time Type 3', 'Avg. Time Type 4', 'Count Type 1',
+                  'Count Type 2', 'Count Type 3', 'Count Type 4']].tail(len(df.columns) * 2 + 2)
     print(df_test.to_string())
